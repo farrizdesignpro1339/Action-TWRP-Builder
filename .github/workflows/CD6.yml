@@ -1,10 +1,10 @@
-name: PBRP CD6 Build
+name: PBRP Build
 
 on:
   workflow_dispatch:
     inputs:
       MANIFEST_URL:
-        description: 'MANIFEST_URL (if want to use SSH keys, use git@github.com:XXXXX)'
+        description: 'MANIFEST_URL'
         required: true
         default: 'https://github.com/PitchBlackRecoveryProject/manifest_pb'
       MANIFEST_BRANCH:
@@ -12,9 +12,9 @@ on:
         required: true
         default: 'android-12.1'
       DEVICE_TREE_URL:
-        description: 'DEVICE_TREE_URL'
+        description: 'DEVICE_TREE_URL (for CD6)'
         required: true
-        default: 'https://github.com/TeamWin/android_device_asus_I003D'
+        default: 'https://github.com/your-username/device_tecno_CD6'  # CHANGE THIS
       DEVICE_TREE_BRANCH:
         description: 'DEVICE_TREE_BRANCH'
         required: true
@@ -22,25 +22,25 @@ on:
       DEVICE_PATH:
         description: 'DEVICE_PATH'
         required: true
-        default: 'device/asus/I003D'
+        default: 'device/tecno/CD6'  # This matches your prebuilt path
       COMMON_TREE_URL:
-        description: 'COMMON_TREE_URL (if no common tree, leave blank)'
+        description: 'COMMON_TREE_URL'
         required: false
       COMMON_PATH:
-        description: 'COMMON_PATH (if no common tree, leave blank)'
+        description: 'COMMON_PATH'
         required: false
       DEVICE_NAME:
         description: 'DEVICE_NAME'
         required: true
-        default: 'I003D'
+        default: 'CD6'
       MAKEFILE_NAME:
         description: 'MAKEFILE_NAME'
         required: true
-        default: 'pb_I003D'
+        default: 'pb_CD6'
       BUILD_TARGET:
         description: 'BUILD_TARGET'
         required: true
-        default: 'pbrp'
+        default: 'recoveryimage'
 
 jobs:
   build:
@@ -59,7 +59,7 @@ jobs:
         echo "Device Path: ${{ github.event.inputs.DEVICE_PATH }}"
         echo "Device Name: ${{ github.event.inputs.DEVICE_NAME }}"
         echo "Makefile Name: ${{ github.event.inputs.MAKEFILE_NAME }}"
-        echo "Build Target: ${{ github.event.inputs.BUILD_TARGET }}.img"
+        echo "Build Target: ${{ github.event.inputs.BUILD_TARGET }}"
         echo "::endgroup::"
 
     - name: Check Out
@@ -118,7 +118,26 @@ jobs:
 
     - name: Clone device tree
       run: |
-        git clone ${{ github.event.inputs.DEVICE_TREE_URL }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ./${{ github.event.inputs.DEVICE_PATH }}
+        # Remove existing directory if present
+        rm -rf ${{ github.event.inputs.DEVICE_PATH }}
+        # Clone device tree
+        git clone ${{ github.event.inputs.DEVICE_TREE_URL }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ${{ github.event.inputs.DEVICE_PATH }}
+        echo "Device tree cloned to: ${{ github.event.inputs.DEVICE_PATH }}"
+      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+
+    - name: Debug device tree location
+      run: |
+        echo "=== Checking device tree at: ${{ github.event.inputs.DEVICE_PATH }} ==="
+        ls -la ${{ github.event.inputs.DEVICE_PATH }}/ || echo "Device path not found!"
+        
+        echo "=== Checking prebuilt directory ==="
+        ls -la ${{ github.event.inputs.DEVICE_PATH }}/prebuilt/ 2>/dev/null || echo "No prebuilt directory!"
+        
+        echo "=== Searching for dtb.img ==="
+        find ${{ github.event.inputs.DEVICE_PATH }} -name "dtb.img" 2>/dev/null || echo "No dtb.img found"
+        
+        echo "=== Listing all files in device tree ==="
+        find ${{ github.event.inputs.DEVICE_PATH }} -type f | head -20
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Clone common tree
@@ -126,7 +145,7 @@ jobs:
         github.event.inputs.COMMON_TREE_URL != null
         && github.event.inputs.COMMON_PATH != null
       run: |
-        git clone ${{ github.event.inputs.COMMON_TREE_URL }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ./${{ github.event.inputs.COMMON_PATH }}
+        git clone ${{ github.event.inputs.COMMON_TREE_URL }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ${{ github.event.inputs.COMMON_PATH }}
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Check Build Tree
@@ -155,68 +174,69 @@ jobs:
 
     - name: Pre-copy dtb.img to output directory
       run: |
-        # Create output directory
-        mkdir -p out/target/product/CD6
+        # Get the actual device path
+        DEVICE_PATH="${{ github.event.inputs.DEVICE_PATH }}"
+        echo "Using device path: $DEVICE_PATH"
         
-        # Copy dtb.img from prebuilt location
-        if [ -f "device/tecno/CD6/prebuilt/dtb.img" ]; then
-          cp device/tecno/CD6/prebuilt/dtb.img out/target/product/CD6/dtb.img
-          echo "✅ Copied dtb.img to out/target/product/CD6/"
-        elif [ -f "device/TECNO/CD6/prebuilt/dtb.img" ]; then
-          cp device/TECNO/CD6/prebuilt/dtb.img out/target/product/CD6/dtb.img
-          echo "✅ Copied dtb.img to out/target/product/CD6/"
+        # Create output directory
+        mkdir -p out/target/product/${{ github.event.inputs.DEVICE_NAME }}
+        
+        # Find dtb.img anywhere in device tree
+        DTB_FILE=$(find $DEVICE_PATH -name "dtb.img" 2>/dev/null | head -1)
+        
+        if [ -n "$DTB_FILE" ]; then
+          cp "$DTB_FILE" out/target/product/${{ github.event.inputs.DEVICE_NAME }}/dtb.img
+          echo "✅ Copied dtb.img from $DTB_FILE"
         else
-          echo "❌ dtb.img not found in prebuilt directory!"
-          echo "Searching for dtb.img..."
-          find device -name "dtb.img" 2>/dev/null || echo "No dtb.img found anywhere"
+          echo "❌ dtb.img not found in device tree!"
+          echo "Searching all locations..."
+          find . -name "dtb.img" 2>/dev/null
           exit 1
         fi
         
         # Verify the copy
-        ls -la out/target/product/CD6/dtb.img
-        file out/target/product/CD6/dtb.img
+        ls -la out/target/product/${{ github.event.inputs.DEVICE_NAME }}/dtb.img
+        file out/target/product/${{ github.event.inputs.DEVICE_NAME }}/dtb.img
+      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Pre-copy dtbo.img to output directory
       run: |
-        # Create output directory
-        mkdir -p out/target/product/CD6
+        DEVICE_PATH="${{ github.event.inputs.DEVICE_PATH }}"
+        mkdir -p out/target/product/${{ github.event.inputs.DEVICE_NAME }}
         
-        # Copy dtbo.img from prebuilt location
-        if [ -f "device/tecno/CD6/prebuilt/dtbo.img" ]; then
-          cp device/tecno/CD6/prebuilt/dtbo.img out/target/product/CD6/dtbo.img
-          echo "✅ Copied dtbo.img to out/target/product/CD6/"
-        elif [ -f "device/TECNO/CD6/prebuilt/dtbo.img" ]; then
-          cp device/TECNO/CD6/prebuilt/dtbo.img out/target/product/CD6/dtbo.img
-          echo "✅ Copied dtbo.img to out/target/product/CD6/"
+        DTBO_FILE=$(find $DEVICE_PATH -name "dtbo.img" 2>/dev/null | head -1)
+        
+        if [ -n "$DTBO_FILE" ]; then
+          cp "$DTBO_FILE" out/target/product/${{ github.event.inputs.DEVICE_NAME }}/dtbo.img
+          echo "✅ Copied dtbo.img from $DTBO_FILE"
         else
           echo "⚠️ dtbo.img not found, continuing anyway..."
         fi
-        
-        # Verify the copy
-        ls -la out/target/product/CD6/dtbo.img 2>/dev/null || echo "dtbo.img not present"
+      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Pre-copy kernel to output directory
       run: |
-        # Create output directory
-        mkdir -p out/target/product/CD6
+        DEVICE_PATH="${{ github.event.inputs.DEVICE_PATH }}"
+        mkdir -p out/target/product/${{ github.event.inputs.DEVICE_NAME }}
         
-        # Copy kernel from prebuilt location
-        if [ -f "device/tecno/CD6/prebuilt/Image.gz" ]; then
-          cp device/tecno/CD6/prebuilt/Image.gz out/target/product/CD6/kernel
-          echo "✅ Copied kernel to out/target/product/CD6/"
-        elif [ -f "device/TECNO/CD6/prebuilt/Image.gz" ]; then
-          cp device/TECNO/CD6/prebuilt/Image.gz out/target/product/CD6/kernel
-          echo "✅ Copied kernel to out/target/product/CD6/"
+        KERNEL_FILE=$(find $DEVICE_PATH/prebuilt -name "Image.gz" 2>/dev/null | head -1)
+        
+        if [ -n "$KERNEL_FILE" ]; then
+          cp "$KERNEL_FILE" out/target/product/${{ github.event.inputs.DEVICE_NAME }}/kernel
+          echo "✅ Copied kernel from $KERNEL_FILE"
         else
-          echo "⚠️ Kernel not found, will be built from source"
+          echo "⚠️ Kernel not found in prebuilt, will be built from source"
         fi
+      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Building recovery
       run: |
         export TERM=xterm-256color
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
-        lunch ${{ github.event.inputs.MAKEFILE_NAME }}-userdebug && make clean && m ${{ github.event.inputs.BUILD_TARGET }} -j$(nproc --all)
+        lunch ${{ github.event.inputs.MAKEFILE_NAME }}-userdebug
+        make clean
+        m ${{ github.event.inputs.BUILD_TARGET }} -j$(nproc --all)
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Upload to Release
