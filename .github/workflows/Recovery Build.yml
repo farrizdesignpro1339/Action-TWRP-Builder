@@ -158,6 +158,17 @@ jobs:
         # Or more aggressive if needed (but careful not to delete everything!)
         # rm -rf device/transsion || true
 
+    - name: Fix TWRP theme XML (de.xml malform)
+      run: |
+        sed -i 's/name="install_reboot"version/name="install_reboot" version/g' bootable/recovery/gui/theme/common/languages/de.xml || true
+        echo "Fixed de.xml"
+        # Also apply device tree patches if any
+        if [ -f "${{ github.event.inputs.DEVICE_PATH }}/patch/graphics_drm.cpp" ]; then cp ${{ github.event.inputs.DEVICE_PATH }}/patch/graphics_drm.cpp bootable/recovery/minuitwrp/graphics_drm.cpp; echo "Applied graphics_drm.cpp"; fi
+        if [ -f "${{ github.event.inputs.DEVICE_PATH }}/patch/libcxx_verbose_abort.patch" ]; then git apply --check ${{ github.event.inputs.DEVICE_PATH }}/patch/libcxx_verbose_abort.patch && git apply ${{ github.event.inputs.DEVICE_PATH }}/patch/libcxx_verbose_abort.patch && echo "Applied libcxx patch" || echo "libcxx patch already applied or failed"; fi
+        if [ -f "${{ github.event.inputs.DEVICE_PATH }}/patch/vold_android15_keyblob.patch" ]; then git apply --check ${{ github.event.inputs.DEVICE_PATH }}/patch/vold_android15_keyblob.patch && git apply ${{ github.event.inputs.DEVICE_PATH }}/patch/vold_android15_keyblob.patch && echo "Applied vold keyblob patch" || echo "vold keyblob patch check failed"; fi
+        if [ -f "${{ github.event.inputs.DEVICE_PATH }}/patch/vold_recovery_fscrypt_keyring.patch" ]; then git apply --check ${{ github.event.inputs.DEVICE_PATH }}/patch/vold_recovery_fscrypt_keyring.patch && git apply ${{ github.event.inputs.DEVICE_PATH }}/patch/vold_recovery_fscrypt_keyring.patch && echo "Applied fscrypt patch" || echo "fscrypt patch check failed"; fi
+      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+
     - name: Building recovery
       run: |
         export TERM=xterm-256color
