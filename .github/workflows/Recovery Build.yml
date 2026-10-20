@@ -179,6 +179,22 @@ jobs:
         lunch ${{ github.event.inputs.MAKEFILE_NAME }}-eng && make clean && make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
+    - name: Repack vendor_boot (Unisoc/realme layout)
+      if: ${{ hashFiles(format('{0}/tools/repack_vendorboot.py', github.event.inputs.DEVICE_PATH)) != '' }}
+      run: |
+        set -e
+        DEVICE_TREE="${{ github.event.inputs.DEVICE_PATH }}"
+        OUT="out/target/product/${{ github.event.inputs.DEVICE_NAME }}"
+        python3 "$DEVICE_TREE/tools/repack_vendorboot.py" \
+          "$OUT/${{ github.event.inputs.BUILD_TARGET }}.img" \
+          "$OUT/${{ github.event.inputs.BUILD_TARGET }}_repacked.img" \
+          --header "$DEVICE_TREE/prebuilt/vendor_boot_header.bin" \
+          --dtb "$DEVICE_TREE/prebuilt/dtb.img" \
+          --bootconfig "$DEVICE_TREE/bootconfig" \
+          --partition-size 104857600
+        mv "$OUT/${{ github.event.inputs.BUILD_TARGET }}_repacked.img" "$OUT/${{ github.event.inputs.BUILD_TARGET }}.img"
+      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+
     - name: Upload to Release
       uses: softprops/action-gh-release@v2
       with:
